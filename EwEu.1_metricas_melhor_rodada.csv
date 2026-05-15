@@ -1,0 +1,2 @@
+Round,J_value,ARI,NMI,Entropia_Condicional,Acuracia,ER,F_measure_Weighted,F_measure_Classe_Iris-setosa,F_measure_Classe_Iris-versicolor,F_measure_Classe_Iris-virginica,Partition_Coefficient_PC,Modified_PC_MPC,Fuzzy_Jaccard,Fuzzy_Folkes_Mallows,Fuzzy_Rand_Frigui,Fuzzy_Rand_Hullermeier
+9,101.88521628603417,0.15172869340012884,0.3295670717641526,1.169247147338298,0.54,0.45999999999999996,0.452382691698931,0.7654320987654321,0.591715976331361,0.0,0.3333333333333333,0.0,0.10938775510204081,0.33073819722257786,0.7071140939597316,0.4789261744966443
