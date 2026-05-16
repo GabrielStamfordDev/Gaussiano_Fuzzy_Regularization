@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler 
 import sys 
+import time
+from joblib import Parallel, delayed
 import math
 from sklearn.metrics import adjusted_rand_score, accuracy_score, fbeta_score, normalized_mutual_info_score
 from scipy.spatial.distance import pdist
@@ -331,7 +333,11 @@ if __name__ == "__main__":
 
     if X is None: exit()
         
-    n_clusters_input = int(input("Quantidade de clusters (K): "))
+    if y_true is not None:
+        n_clusters_input = len(np.unique(y_true.values))
+        print(f"\nQuantidade de clusters (K) definida automaticamente para: {n_clusters_input} (baseado nas classes da coluna target)")
+    else:
+        n_clusters_input = int(input("\nAviso: Coluna target não fornecida. Digite a quantidade de clusters (K) manualmente: "))
     n_repetitions_input = int(input("Quantidade de repetições por experimento (ex: 30): "))
     max_iter_input = int(input("Máximo de iterações por rodada: "))
     
@@ -351,16 +357,72 @@ if __name__ == "__main__":
     if modo == '2':
         tipo_grid = input("Usar Grid Rápido (L) ou Grid Lento (I)? (L/I): ").upper()
         if tipo_grid == 'I':
-            print("Aviso: Grid linear de 0.001 a 100 pode demorar dias.")
+            inicio = input("Digite o início do grid")
+            fim = input("Digite o fim do grid")
+            passo = input("Digite o passo do grid")
             # Adaptação para evitar zero exato:
-            grid_vals = np.arange(0.001, 100.1, 0.1)
-            #grid_vals = np.insert(grid_vals, 0, 0.001)
+            grid_vals = np.arange(inicio, fim, passo)
+            grid_vals = np.insert(grid_vals, 0, 0.1)
+            grid_vals = np.insert(grid_vals, 0, 0.01)
+            grid_vals = np.insert(grid_vals, 0, 0.001)
         else:
             grid_vals = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
 
         print(f"\nIniciando Grid Search ({len(grid_vals)}x{len(grid_vals)} = {len(grid_vals)**2} combinações)...")
         
-        max_avg_min_dist = -float('inf')
+        # 1. Função isolada para o Joblib poder enviar aos múltiplos núcleos
+        def avaliar_parametros(Tw_test, Tu_test, n_reps, X_data, n_clusters, max_iter, tol):
+            min_dists_rodadas = []
+            for rep in range(n_reps):
+                model_test = KernelFCMWEWEU1(n_clusters=n_clusters, Tw=Tw_test, Tu=Tu_test, tol=tol, max_iter=max_iter, random_state=rep)
+                _, _, _, G_final, _, _ = model_test.fit(X_data, verbose=False)
+                
+                # Calcula a distância entre os centróides gerados nesta repetição
+                distancias_centroides = pdist(G_final, metric='euclidean')
+                distancia_minima = np.min(distancias_centroides) if len(distancias_centroides) > 0 else 0
+                min_dists_rodadas.append(distancia_minima)
+            
+            # Retorna a média dessas distâncias acompanhada dos hiperparâmetros que a geraram
+            media_distancia_minima = np.mean(min_dists_rodadas)
+            return (media_distancia_minima, Tw_test, Tu_test)
+
+        # 2. Criamos a lista com todos os pares que queremos testar
+        combinacoes = [(tw, tu) for tw in grid_vals for tu in grid_vals]
+
+        # --- INÍCIO DO CRONÔMETRO ---
+        start_time = time.time()
+
+        # 3. MÁGICA DA PARALELIZAÇÃO: n_jobs=-1 usa todos os núcleos disponíveis
+        # verbose=10 fará o Python imprimir o progresso (ex: "Done 50 out of 1000000")
+        resultados = Parallel(n_jobs=-1, verbose=10)(
+            delayed(avaliar_parametros)(tw, tu, n_repetitions_input, X, n_clusters_input, max_iter_input, TOLERANCE) 
+            for tw, tu in combinacoes
+        )
+
+        # --- FIM DO CRONÔMETRO ---
+        end_time = time.time()
+        tempo_total = end_time - start_time
+        
+        horas = int(tempo_total // 3600)
+        minutos = int((tempo_total % 3600) // 60)
+        segundos = tempo_total % 60
+
+        # 4. Encontra a tupla vencedora (aquela com o maior valor no índice [0], que é a distância)
+        melhor_resultado = max(resultados, key=lambda item: item[0])
+        max_avg_min_dist = melhor_resultado[0]
+        melhor_Tw = melhor_resultado[1]
+        melhor_Tu = melhor_resultado[2]
+
+        print("\n" + "="*60)
+        print(f"GRID SEARCH CONCLUÍDO!")
+        print(f"Tempo Total de Execução: {horas}h {minutos}m {segundos:.2f}s")
+        print(f"Melhor Separação (Maior Dist. Média): {max_avg_min_dist:.6f}")
+        print(f"Hiperparâmetros Vencedores: Tw = {melhor_Tw}, Tu = {melhor_Tu}")
+        print("="*60 + "\n")
+        
+        Tw_input = melhor_Tw
+        Tu_input = melhor_Tu
+"""         max_avg_min_dist = -float('inf')
         melhor_Tw = None
         melhor_Tu = None
 
@@ -392,7 +454,7 @@ if __name__ == "__main__":
         
         Tw_input = melhor_Tw
         Tu_input = melhor_Tu
-
+"""
     else:
         Tw_input = float(input("Parâmetro Tw: "))
         Tu_input = float(input("Parâmetro Tu: "))
