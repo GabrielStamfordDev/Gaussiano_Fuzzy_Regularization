@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from sklearn.metrics import adjusted_rand_score, accuracy_score, fbeta_score, normalized_mutual_info_score
 import sys 
 import math
@@ -35,32 +35,63 @@ def generate_confusion_matrix_clustering(y_true, cluster_labels, n_clusters):
 
 # -------------------- FUNÇÕES DE UTILIDADE E KERNEL --------------------
 
-def load_and_preprocess_data(data_file_path, headers_file_path, delimiter, target_column_name=None, perform_normalization=True):
+def load_and_preprocess_data(data_file_path, headers_file_path, delimiter, target_column_name=None, normalization_type='standard'):
     try:
-        headers_df = pd.read_csv(headers_file_path, header=None)
+        # Lê os headers
+        headers_df = pd.read_csv(headers_file_path, header=None, sep=delimiter)
         headers = headers_df.squeeze().tolist()
+        
+        # Lê os dados
         df = pd.read_csv(data_file_path, header=None, names=headers, sep=delimiter)
     except FileNotFoundError:
-        print(f"Erro: Arquivo não encontrado.")
+        print(f"Erro: Um dos ficheiros não foi encontrado.")
         return None, None, None
     except Exception as e:
-        print(f"Erro ao carregar arquivos: {e}")
+        print(f"Erro ao carregar ficheiros: {e}")
         return None, None, None
 
+    # ---------------------------------------------------------
+    # Remove o target E colunas inúteis (ex: id)
+    # ---------------------------------------------------------
     y_true = None
     if target_column_name and target_column_name in df.columns:
         y_true = df[target_column_name]
-        X_df = df.drop(columns=[target_column_name])
-    else:
-        X_df = df
+        
+    colunas_para_remover = [col for col in [target_column_name, 'id', 'ID', 'Id'] if col and col in df.columns]
+    X_df = df.drop(columns=colunas_para_remover)
     
-    if perform_normalization:
+    # =========================================================================
+    # LÓGICA DE LIMPEZA E IMPUTAÇÃO 
+    # =========================================================================
+    X_df = X_df.apply(pd.to_numeric, errors='coerce')
+    
+    if X_df.isna().sum().sum() > 0:
+        print("Aviso: Foram encontrados dados sujos ou inválidos. Eles foram substituídos pela média da respectiva coluna.")
+        X_df = X_df.fillna(X_df.mean())
+    # =========================================================================
+
+    # =========================================================================
+    # NOVA LÓGICA DE NORMALIZAÇÃO COM MÚLTIPLAS OPÇÕES
+    # =========================================================================
+    if normalization_type == 'standard':
         scaler = StandardScaler()
         X_processed = scaler.fit_transform(X_df)
-        print("Features normalizadas.")
-    else:
+        print("Features normalizadas (StandardScaler: Média=0, Desvio Padrão=1).")
+        
+    elif normalization_type == 'minmax':
+        scaler = MinMaxScaler()
+        X_processed = scaler.fit_transform(X_df)
+        print("Features normalizadas (MinMaxScaler: Escala estritamente entre 0 e 1).")
+        
+    elif normalization_type == 'robust':
+        scaler = RobustScaler()
+        X_processed = scaler.fit_transform(X_df)
+        print("Features normalizadas (RobustScaler: Resistente a Outliers).")
+        
+    else: # Caso seja 'none' ou qualquer outro valor
         X_processed = X_df.values
-        print("Dados brutos utilizados.")
+        print("Dados brutos utilizados (Sem normalização).")
+    # =========================================================================
 
     return X_processed, y_true, X_df.columns.tolist()
 
@@ -411,9 +442,30 @@ if __name__ == "__main__":
     normalize_choice = input("Normalizar features? (S/N): ").upper()
     
     target_name = target_name if target_name.strip() else None
-    perform_normalization = (normalize_choice == 'S')
+    print("Tipos de Normalização:")
+    print("1: StandardScaler (Recomendado padrão)")
+    print("2: MinMaxScaler (Entre 0 e 1)")
+    print("3: RobustScaler (Para dados com muitos outliers)")
+    print("4: Nenhuma normalização")
+    norm_choice = input("Escolha a normalização (1 a 4): ").strip()
     
-    X, y_true, feature_names = load_and_preprocess_data(data_file_name, headers_file_name, delimiter, target_name, perform_normalization)
+    if norm_choice == '1':
+        norm_type = 'standard'
+    elif norm_choice == '2':
+        norm_type = 'minmax'
+    elif norm_choice == '3':
+        norm_type = 'robust'
+    else:
+        norm_type = 'none'
+        
+    # Chamada da função atualizada
+    X, y_true, feature_names = load_and_preprocess_data(
+        data_file_name, 
+        headers_file_name, 
+        delimiter, 
+        target_name, 
+        normalization_type=norm_type
+    )
 
     if X is None:
         exit()
@@ -473,7 +525,7 @@ if __name__ == "__main__":
         study = optuna.create_study(direction='maximize', sampler=amostrador_fixo)
         
         # n_jobs=-1 faz o Optuna testar múltiplas combinações ao mesmo tempo usando suas threads
-        study.optimize(objective, n_trials=n_iteracoes, n_jobs=-1)
+        study.optimize(objective, n_trials=n_iteracoes)
 
         # --- FIM DO CRONÔMETRO ---
         end_time = time.time()

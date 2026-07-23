@@ -543,7 +543,7 @@ if __name__ == "__main__":
         study = optuna.create_study(direction='maximize', sampler=amostrador_fixo)
         
         # n_jobs=-1 faz o Optuna testar múltiplas combinações simultaneamente
-        study.optimize(objective, n_trials=n_iteracoes, n_jobs=-1)
+        study.optimize(objective, n_trials=n_iteracoes)
 
         # --- FIM DO CRONÔMETRO ---
         end_time = time.time()
